@@ -202,6 +202,10 @@ class StockbitAuth {
     this.accessToken = '';
     this.expiresAt = null;
     this._loaded = false;
+    pool.query(
+      `DELETE FROM settings WHERE key = $1`,
+      ['stockbit_access_token']
+    ).catch(() => {});
   }
 
   async getHeaders() {
@@ -253,6 +257,13 @@ async function fetchStockbitJson(url, label, maxRetry = 3) {
       bodyText = await res.text();
       if (statusCode === 401 && attempt < maxRetry) {
         auth.invalidate();
+        if (auth.refreshTokenValue) {
+          try {
+            await auth.refreshToken();
+          } catch (refreshErr) {
+            console.warn(`[stockbit] Refresh after 401 failed: ${refreshErr.message}`);
+          }
+        }
         attempt += 1;
         await sleep(750 * attempt);
         continue;
