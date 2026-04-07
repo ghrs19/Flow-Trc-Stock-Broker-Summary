@@ -27,7 +27,10 @@ function generateDates(from, to) {
   while (current >= start) {
     const day = current.getDay();
     if (day !== 0 && day !== 6) { // Skip Sat (6) and Sun (0)
-      dates.push(current.toISOString().split('T')[0]);
+      const yyyy = current.getFullYear();
+      const mm = String(current.getMonth() + 1).padStart(2, '0');
+      const dd = String(current.getDate()).padStart(2, '0');
+      dates.push(`${yyyy}-${mm}-${dd}`);
     }
     current.setDate(current.getDate() - 1);
   }
@@ -63,7 +66,7 @@ async function run() {
   const rangeArg = args.find(a => a.startsWith('--range='))?.split('=')[1];
   const fromArg = args.find(a => a.startsWith('--from='))?.split('=')[1];
   const toArg = args.find(a => a.startsWith('--to='))?.split('=')[1];
-  
+
   console.log('🚀 Starting Historical Broker Summary Population...');
   console.log(`⏱️  Delay between requests: ${DELAY_MS}ms`);
 
@@ -82,7 +85,7 @@ async function run() {
   }
 
   const dateList = generateDates(startDate, endDate);
-  
+
   if (dateList.length === 0) {
     console.log('⚠️ No trading days found in the specified range. Exiting.');
     process.exit(0);
@@ -94,10 +97,10 @@ async function run() {
     if (symbolLimit) {
       stocksQuery += ` LIMIT ${parseInt(symbolLimit, 10)}`;
     }
-    
+
     const stocksRes = await pool.query(stocksQuery);
     const symbols = stocksRes.rows.map(r => r.symbol);
-    
+
     console.log(`📦 Found ${symbols.length} stocks to process.`);
     console.log(`📅 Dates to process: ${dateList.length} (Workdays from ${dateList[0]} back to ${dateList[dateList.length - 1]})`);
 
@@ -112,7 +115,7 @@ async function run() {
             'SELECT 1 FROM broker_summary WHERE stock_code = $1 AND date = $2 LIMIT 1',
             [symbol, date]
           );
-          
+
           if (checkRes.rows.length > 0) {
             console.log(`  ⏭️  ${date}: Already exists. Skipping.`);
             continue;
@@ -121,19 +124,19 @@ async function run() {
           process.stdout.write(`  ⏳ ${date}: Fetching... `);
           const { buyRows, sellRows } = await fetchBrokerSummary(symbol, date);
           const count = await upsertBrokerSummary(pool, symbol, date, buyRows, sellRows);
-          
+
           process.stdout.write(`Done (${count} rows).\n`);
-          
+
           // Throttling
           await sleep(DELAY_MS);
         } catch (err) {
           console.log(`\n  ❌ Error on ${date}: ${err.message}`);
-          
+
           if (err.message.includes('expired') || err.message.includes('Login failed')) {
             console.error('\n🛑 Authentication failure. Please run "npm run login" first.');
             process.exit(1);
           }
-          
+
           console.log('  Continuing to next date...');
         }
       }
