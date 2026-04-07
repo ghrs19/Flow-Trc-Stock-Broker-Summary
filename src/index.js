@@ -57,7 +57,6 @@ app.listen(PORT, async () => {
   console.log(`Server running on http://localhost:${PORT}`);
   try {
     await auth.loadToken();
-    auth.startTokenMonitor();
   } catch (err) {
     console.warn(`[startup] Token load warning: ${err.message}`);
   }

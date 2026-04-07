@@ -1,8 +1,6 @@
-const fs = require('fs/promises');
-const path = require('path');
+const pool = require('../db');
 
 const EXODUS_API = 'https://exodus.stockbit.com';
-const TOKEN_CACHE_FILE = path.join(process.cwd(), '.token_cache.json');
 const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
 const DEFAULT_HEADERS = {
@@ -58,7 +56,6 @@ class StockbitAuth {
     this.expiresAt = null;
     this.playerId = (process.env.STOCKBIT_PLAYER_ID || 'pc_browser_custom').trim();
     this._loaded = false;
-    this._monitorInterval = null;
   }
 
   isTokenValid() {
@@ -78,13 +75,23 @@ class StockbitAuth {
   }
 
   async saveToken() {
-    const data = {
-      access_token: this.accessToken,
-      refresh_token: this.refreshTokenValue,
-      expires_at: this.expiresAt ? this.expiresAt.toISOString() : null,
-      updated_at: new Date().toISOString(),
-    };
-    await fs.writeFile(TOKEN_CACHE_FILE, JSON.stringify(data, null, 2), 'utf8').catch(() => {});
+    const entries = [
+      ['stockbit_access_token', this.accessToken || ''],
+      ['stockbit_refresh_token', this.refreshTokenValue || ''],
+      ['stockbit_token_expires_at', this.expiresAt ? this.expiresAt.toISOString() : ''],
+    ];
+    try {
+      for (const [key, value] of entries) {
+        await pool.query(
+          `INSERT INTO settings (key, value, updated_at)
+           VALUES ($1, $2, NOW())
+           ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+          [key, value]
+        );
+      }
+    } catch (err) {
+      console.warn(`[stockbit] Failed to save token to DB: ${err.message}`);
+    }
   }
 
   async loadToken() {
@@ -103,24 +110,27 @@ class StockbitAuth {
       console.warn(`[stockbit] Token from env is expired`);
     }
 
-    // Priority 2: .token_cache.json
+    // Priority 2: DB settings table
     try {
-      const raw = await fs.readFile(TOKEN_CACHE_FILE, 'utf8');
-      const parsed = JSON.parse(raw);
-      const cachedToken = String(parsed.access_token || '').trim();
-      const cachedRefresh = String(parsed.refresh_token || '').trim();
+      const result = await pool.query(
+        `SELECT key, value FROM settings WHERE key IN ($1, $2)`,
+        ['stockbit_access_token', 'stockbit_refresh_token']
+      );
+      const map = Object.fromEntries(result.rows.map(r => [r.key, r.value]));
+      const cachedToken = (map.stockbit_access_token || '').trim();
+      const cachedRefresh = (map.stockbit_refresh_token || '').trim();
       if (cachedRefresh) this.refreshTokenValue = cachedRefresh;
       if (cachedToken) {
         this.accessToken = cachedToken;
         this.expiresAt = decodeJwtExpiry(cachedToken);
         if (this.isTokenValid()) {
-          console.log(`[stockbit] Token loaded from cache (expires in ${formatTimeLeft(this.expiresAt)})`);
+          console.log(`[stockbit] Token loaded from DB (expires in ${formatTimeLeft(this.expiresAt)})`);
           return;
         }
-        console.warn(`[stockbit] Token from cache is expired`);
+        console.warn(`[stockbit] Token from DB is expired`);
       }
-    } catch {
-      // no cache file
+    } catch (err) {
+      console.warn(`[stockbit] Failed to load token from DB: ${err.message}`);
     }
 
     // Priority 3: Try refresh token (if available)
@@ -192,46 +202,6 @@ class StockbitAuth {
     this.accessToken = '';
     this.expiresAt = null;
     this._loaded = false;
-  }
-
-  startTokenMonitor(intervalMs = 5 * 60 * 1000) {
-    if (this._monitorInterval) return;
-    console.log('[stockbit] Token monitor started (checks every 5m)');
-
-    this._monitorInterval = setInterval(async () => {
-      try {
-        if (!this.expiresAt) return;
-
-        const timeLeft = this.expiresAt.getTime() - Date.now();
-        if (timeLeft <= 10 * 60 * 1000 && timeLeft > 0) {
-          console.log(`[stockbit] Token expires in ${formatTimeLeft(this.expiresAt)}, refreshing proactively...`);
-          if (this.refreshTokenValue) {
-            await this.refreshToken();
-          } else {
-            console.warn('[stockbit] No refresh token — update STOCKBIT_TOKEN in .env or POST /api/token');
-          }
-        } else if (timeLeft > 0) {
-          console.log(`[stockbit] Token valid (expires in ${formatTimeLeft(this.expiresAt)})`);
-        } else {
-          console.warn(`[stockbit] Token EXPIRED, attempting refresh...`);
-          if (this.refreshTokenValue) {
-            await this.refreshToken();
-          } else {
-            console.warn('[stockbit] No refresh token — update STOCKBIT_TOKEN in .env or POST /api/token');
-          }
-        }
-      } catch (err) {
-        console.error(`[stockbit] Token monitor refresh failed: ${err.message}`);
-      }
-    }, intervalMs);
-  }
-
-  stopTokenMonitor() {
-    if (this._monitorInterval) {
-      clearInterval(this._monitorInterval);
-      this._monitorInterval = null;
-      console.log('[stockbit] Token monitor stopped');
-    }
   }
 
   async getHeaders() {
