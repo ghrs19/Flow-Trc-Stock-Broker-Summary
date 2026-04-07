@@ -202,10 +202,6 @@ class StockbitAuth {
     this.accessToken = '';
     this.expiresAt = null;
     this._loaded = false;
-    pool.query(
-      `DELETE FROM settings WHERE key = $1`,
-      ['stockbit_access_token']
-    ).catch(() => {});
   }
 
   async getHeaders() {
