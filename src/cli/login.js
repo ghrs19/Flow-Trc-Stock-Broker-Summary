@@ -1,18 +1,51 @@
 require('dotenv').config();
 const { auth } = require('../lib/stockbit');
 const pool = require('../db');
-const p = require('@clack/prompts');
-const { color } = require('@clack/prompts');
+
+/**
+ * Note: @clack/prompts is an ESM-only module. 
+ * Since this project is CommonJS, we must use dynamic import() inside an async function.
+ */
 
 async function run() {
-  p.intro(p.bgCyan(p.black(' STOCKBIT LOGIN ')));
+  const p = await import('@clack/prompts');
+
+  // Move verification logic inside to share the dynamic 'p' import
+  async function handleVerification(result, savedEmail, savedPass) {
+    p.log.warn(`Mobile App Approval Required: ${result.deviceName}`);
+    p.log.step('1. Open Stockbit mobile app on your phone');
+    p.log.step('2. Find the "Trust This Device" prompt');
+    p.log.step('3. Tap "Approve" (Setujui)');
+    
+    const approve = await p.confirm({
+      message: 'Have you approved the request on your phone?',
+      initialValue: true,
+    });
+
+    if (!approve) {
+      p.cancel('Login verification aborted');
+      process.exit(0);
+    }
+
+    const spinner = p.spinner();
+    spinner.start('Finalizing authentication');
+    
+    await auth.login(savedEmail, savedPass);
+    
+    if (auth.isTokenValid()) {
+      spinner.stop('Device trusted and logged in successfully');
+    } else {
+      spinner.stop('Verification failed', 1);
+      throw new Error('Failed to finalize login after mobile approval.');
+    }
+  }
+
+  p.intro(' STOCKBIT LOGIN ');
 
   try {
-    // 1. Initial attempt to load from tokens or refresh
     const spinner = p.spinner();
     spinner.start('Checking authentication status');
     
-    // loadToken will check .env and DB, and try refresh
     const loginResult = await auth.loadToken();
     
     if (auth.isTokenValid()) {
@@ -23,7 +56,6 @@ async function run() {
     } else {
       spinner.stop('Authentication required');
       
-      // 2. Prompt for credentials
       const group = await p.group(
         {
           email: () => p.text({
@@ -63,7 +95,6 @@ async function run() {
       }
     }
 
-    // 3. Final success output
     const info = auth.getTokenInfo();
     p.note(
       `Status: ${info.isValid ? 'Authorized' : 'Expired'}\n` +
@@ -80,38 +111,6 @@ async function run() {
     process.exit(1);
   } finally {
     await pool.end();
-  }
-}
-
-async function handleVerification(result, savedEmail, savedPass) {
-  p.log.warn(`Mobile App Approval Required: ${result.deviceName}`);
-  p.log.step('1. Open Stockbit mobile app on your phone');
-  p.log.step('2. Find the "Trust This Device" prompt');
-  p.log.step('3. Tap "Approve" (Setujui)');
-  
-  const approve = await p.confirm({
-    message: 'Have you approved the request on your phone?',
-    initialValue: true,
-  });
-
-  if (!approve) {
-    p.cancel('Login verification aborted');
-    process.exit(0);
-  }
-
-  const spinner = p.spinner();
-  spinner.start('Finalizing authentication');
-  
-  // For V6 app flow, we retry the login call which now should return the tokens
-  // If we have savedEmail/savedPass, we use them. 
-  // Otherwise login() will use its internal state or throw if missing.
-  await auth.login(savedEmail, savedPass);
-  
-  if (auth.isTokenValid()) {
-    spinner.stop('Device trusted and logged in successfully');
-  } else {
-    spinner.stop('Verification failed', 1);
-    throw new Error('Failed to finalize login after mobile approval.');
   }
 }
 
