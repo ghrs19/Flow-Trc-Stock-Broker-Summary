@@ -6,12 +6,15 @@ const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 const DEFAULT_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
   'Accept': 'application/json',
-  'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+  'Accept-Language': 'en-US,en;q=0.9',
   'Origin': 'https://stockbit.com',
   'Referer': 'https://stockbit.com/',
-  'X-DeviceType': 'Google Chrome',
-  'X-Platform': 'PC',
-  'X-AppVersion': '3.21.0',
+  'sec-ch-ua': '"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
+  'sec-ch-ua-mobile': '?0',
+  'sec-ch-ua-platform': '"macOS"',
+  'sec-fetch-dest': 'empty',
+  'sec-fetch-mode': 'cors',
+  'sec-fetch-site': 'same-site',
   'Content-Type': 'application/json',
 };
 
@@ -56,6 +59,7 @@ class StockbitAuth {
     this.expiresAt = null;
     this.playerId = (process.env.STOCKBIT_PLAYER_ID || 'pc_browser_custom').trim();
     this._loaded = false;
+    this.lastLoginResult = null;
   }
 
   isTokenValid() {
@@ -74,12 +78,17 @@ class StockbitAuth {
     };
   }
 
+  /**
+   * Saves tokens to the Neon DB settings table.
+   */
   async saveToken() {
     const entries = [
       ['stockbit_access_token', this.accessToken || ''],
       ['stockbit_refresh_token', this.refreshTokenValue || ''],
       ['stockbit_token_expires_at', this.expiresAt ? this.expiresAt.toISOString() : ''],
+      ['stockbit_player_id', this.playerId || ''],
     ];
+
     try {
       for (const [key, value] of entries) {
         await pool.query(
@@ -89,40 +98,55 @@ class StockbitAuth {
           [key, value]
         );
       }
+      console.log('[stockbit] Authentication metadata persisted to database');
     } catch (err) {
-      console.warn(`[stockbit] Failed to save token to DB: ${err.message}`);
+      console.warn(`[stockbit] Failed to save tokens to DB: ${err.message}`);
     }
   }
 
   async loadToken() {
-    if (this._loaded) return;
+    if (this.isTokenValid()) return;
+
+    // Source 1: Memory/Loaded check
+    if (this._loaded && this.isTokenValid()) return;
     this._loaded = true;
 
-    // Priority 1: STOCKBIT_TOKEN from env
+    // Source 2: Direct environment variables (Override)
     const envToken = (process.env.STOCKBIT_TOKEN || '').trim();
+    const envRefresh = (process.env.STOCKBIT_REFRESH_TOKEN || '').trim();
+
     if (envToken) {
       this.accessToken = envToken;
       this.expiresAt = decodeJwtExpiry(envToken);
       if (this.isTokenValid()) {
-        console.log(`[stockbit] Token loaded from env (expires in ${formatTimeLeft(this.expiresAt)})`);
+        console.log(`[stockbit] Token loaded from .env (expires in ${formatTimeLeft(this.expiresAt)})`);
+        if (envRefresh) this.refreshTokenValue = envRefresh;
         return;
       }
-      console.warn(`[stockbit] Token from env is expired`);
+      console.warn(`[stockbit] Token from .env is expired`);
     }
 
-    // Priority 2: DB settings table
+    // Source 3: Database settings table
     try {
       const result = await pool.query(
-        `SELECT key, value FROM settings WHERE key IN ($1, $2)`,
-        ['stockbit_access_token', 'stockbit_refresh_token']
+        `SELECT key, value FROM settings WHERE key IN ($1, $2, $3, $4)`,
+        ['stockbit_access_token', 'stockbit_refresh_token', 'stockbit_token_expires_at', 'stockbit_player_id']
       );
+      
       const map = Object.fromEntries(result.rows.map(r => [r.key, r.value]));
-      const cachedToken = (map.stockbit_access_token || '').trim();
-      const cachedRefresh = (map.stockbit_refresh_token || '').trim();
-      if (cachedRefresh) this.refreshTokenValue = cachedRefresh;
-      if (cachedToken) {
-        this.accessToken = cachedToken;
-        this.expiresAt = decodeJwtExpiry(cachedToken);
+      const dbToken = (map.stockbit_access_token || '').trim();
+      const dbRefresh = (map.stockbit_refresh_token || '').trim();
+      const dbPlayerId = (map.stockbit_player_id || '').trim();
+
+      if (dbPlayerId) {
+        this.playerId = dbPlayerId;
+      }
+
+      if (dbToken) {
+        this.accessToken = dbToken;
+        this.expiresAt = decodeJwtExpiry(dbToken);
+        if (dbRefresh) this.refreshTokenValue = dbRefresh;
+
         if (this.isTokenValid()) {
           console.log(`[stockbit] Token loaded from DB (expires in ${formatTimeLeft(this.expiresAt)})`);
           return;
@@ -130,27 +154,145 @@ class StockbitAuth {
         console.warn(`[stockbit] Token from DB is expired`);
       }
     } catch (err) {
-      console.warn(`[stockbit] Failed to load token from DB: ${err.message}`);
+      console.warn(`[stockbit] Failed to load token or player ID from DB: ${err.message}`);
     }
 
-    // Priority 3: Try refresh token (if available)
+    // Source 4: Try Refresh Token
     if (this.refreshTokenValue) {
       try {
         await this.refreshToken();
-        return;
+        if (this.isTokenValid()) return;
       } catch (err) {
-        console.warn(`[stockbit] Token refresh failed: ${err.message}`);
+        console.warn(`[stockbit] Automatic refresh failed: ${err.message}`);
       }
     }
 
-    // No valid token available
-    if (!this.isTokenValid()) {
-      throw new Error(
-        'No valid Stockbit token available.\n' +
-        'To fix: Copy your token from stockbit.com browser DevTools (Network tab → any API request → Authorization header) ' +
-        'and set it as STOCKBIT_TOKEN in .env or POST it to /api/token'
-      );
+    // Source 5: Environment credentials (if available)
+    const envEmail = process.env.STOCKBIT_EMAIL;
+    const envPass = process.env.STOCKBIT_PASSWORD;
+
+    if (envEmail && envPass) {
+      try {
+        console.log(`[stockbit] Attempting automated login using environment credentials...`);
+        this.lastLoginResult = await this.login(envEmail, envPass);
+        if (this.isTokenValid()) return;
+        
+        if (this.lastLoginResult && this.lastLoginResult.needsVerification) {
+          return this.lastLoginResult;
+        }
+      } catch (err) {
+        console.error(`[stockbit] Automated login via environment failed: ${err.message}`);
+      }
     }
+
+    // Final failure
+    if (!this.isTokenValid() && (!this.lastLoginResult || !this.lastLoginResult.needsVerification)) {
+      throw new Error('No valid Stockbit token available and automated login failed.');
+    }
+
+    return this.lastLoginResult;
+  }
+
+  /**
+   * Performs a fresh login using email and password.
+   */
+  async login(user, password) {
+    if (!user || !password) {
+      throw new Error('Email and password are required for login');
+    }
+
+    const res = await fetch('https://exodus.stockbit.com/login/v6/username', {
+      method: 'POST',
+      headers: {
+        ...DEFAULT_HEADERS,
+      },
+      body: JSON.stringify({
+        player_id: this.playerId,
+        user: user,
+        password: password,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Login failed (${res.status}): ${body}`);
+    }
+
+    const json = await res.json();
+    const tokenData = json?.data?.login?.token_data;
+    const newDevice = json?.data?.new_device;
+    
+    // Check for NEW DEVICE challenge (Requires OTP)
+    if (newDevice && newDevice.trusted_device?.login_token) {
+      console.warn(`[stockbit] New device detected: ${newDevice.trusted_device.device_name}`);
+      return {
+        needsVerification: true,
+        loginToken: newDevice.trusted_device.login_token,
+        deviceName: newDevice.trusted_device.device_name
+      };
+    }
+
+    if (!tokenData?.access?.token) {
+      const errorMsg = json?.message || json?.error || 'Unknown error';
+      console.error('[stockbit] Full login response:', JSON.stringify(json, null, 2));
+      throw new Error(`Login response missing access token (API Message: ${errorMsg})`);
+    }
+
+    this.accessToken = tokenData.access.token;
+    this.refreshTokenValue = tokenData.refresh?.token || '';
+    this.expiresAt = decodeJwtExpiry(this.accessToken);
+
+    await this.saveToken();
+    console.log(`[stockbit] Logged in successfully as ${this.email} (expires in ${formatTimeLeft(this.expiresAt)})`);
+    return { success: true, accessToken: this.accessToken };
+  }
+
+  /**
+   * Verifies a new device using an OTP pin or mobile app approval.
+   */
+  async verify(loginToken, pin = '') {
+    if (!loginToken) {
+      throw new Error('Login token is required for verification');
+    }
+
+    console.log(`[stockbit] Finalizing login with token ${loginToken.substring(0, 8)}...`);
+    const res = await fetch('https://exodus.stockbit.com/login/v6/verify', {
+      method: 'POST',
+      headers: {
+        ...DEFAULT_HEADERS,
+        'X-DeviceType': 'Mozilla Firefox',
+      },
+      body: JSON.stringify({
+        login_token: loginToken,
+        pin: pin,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      let errorMsg = body;
+      try {
+        const json = JSON.parse(body);
+        errorMsg = json.message || json.error || body;
+      } catch (e) {}
+      throw new Error(`Verification failed (${res.status}): ${errorMsg}`);
+    }
+
+    const json = await res.json();
+    const tokenData = json?.data?.verify?.token_data;
+
+    if (!tokenData?.access?.token) {
+      console.error('[stockbit] Full verify response:', JSON.stringify(json, null, 2));
+      throw new Error('Verification response missing access token');
+    }
+
+    this.accessToken = tokenData.access.token;
+    this.refreshTokenValue = tokenData.refresh?.token || '';
+    this.expiresAt = decodeJwtExpiry(this.accessToken);
+
+    await this.saveToken();
+    console.log(`[stockbit] Device verified and logged in successfully (expires in ${formatTimeLeft(this.expiresAt)})`);
+    return this.accessToken;
   }
 
   async refreshToken() {

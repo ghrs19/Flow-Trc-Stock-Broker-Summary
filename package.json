@@ -6,12 +6,15 @@
   "scripts": {
     "start": "node src/index.js",
     "populate": "node src/cron-populate.js",
-    "populate:one": "node src/populate-one.js"
+    "populate:one": "node src/populate-one.js",
+    "populate:history": "node src/cli/populate-history.js",
+    "login": "node src/cli/login.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@clack/prompts": "^1.2.0",
     "dotenv": "^17.4.1",
     "express": "^5.2.1",
     "pg": "^8.20.0"
