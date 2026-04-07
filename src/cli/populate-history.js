@@ -122,8 +122,8 @@ async function run() {
           }
 
           process.stdout.write(`  ⏳ ${date}: Fetching... `);
-          const { buyRows, sellRows } = await fetchBrokerSummary(symbol, date);
-          const count = await upsertBrokerSummary(pool, symbol, date, buyRows, sellRows);
+          const brokersData = await fetchBrokerSummary(symbol, date);
+          const count = await upsertBrokerSummary(pool, symbol, date, brokersData);
 
           process.stdout.write(`Done (${count} rows).\n`);
 

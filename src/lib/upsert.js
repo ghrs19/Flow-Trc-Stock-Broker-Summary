@@ -37,12 +37,9 @@ async function stockExists(pool, stockCode) {
   return result.rows.length > 0;
 }
 
-async function upsertBrokerSummary(pool, stockCode, date, buyRows, sellRows) {
+async function upsertBrokerSummary(pool, stockCode, date, brokersData) {
   // 1. Gather all unique broker codes present in this batch
-  const uniqueCodes = new Set([
-    ...buyRows.map(r => r.broker_code),
-    ...sellRows.map(r => r.broker_code)
-  ]);
+  const uniqueCodes = new Set(brokersData.map(r => r.broker_code));
 
   // 2. Ensure both stock and brokers exist
   const [hasStock] = await Promise.all([
@@ -60,38 +57,40 @@ async function upsertBrokerSummary(pool, stockCode, date, buyRows, sellRows) {
   try {
     await client.query('BEGIN');
 
-    for (const row of buyRows) {
+    for (const row of brokersData) {
       await client.query(
-        `INSERT INTO broker_summary (date, stock_code, broker_code, side, lot, val, avg_price, lot_vol, val_vol, freq, type)
-         VALUES ($1, $2, $3, 'B', $4, $5, $6, $7, $8, $9, 'net')
-         ON CONFLICT (date, stock_code, broker_code, side)
-         DO UPDATE SET
-           lot = EXCLUDED.lot,
-           val = EXCLUDED.val,
-           avg_price = EXCLUDED.avg_price,
-           lot_vol = EXCLUDED.lot_vol,
-           val_vol = EXCLUDED.val_vol,
-           freq = EXCLUDED.freq,
-           type = EXCLUDED.type`,
-        [date, stockCode, row.broker_code, row.lot, row.val, row.avg_price, row.lot_vol, row.val_vol, row.freq]
-      );
-      count++;
-    }
-
-    for (const row of sellRows) {
-      await client.query(
-        `INSERT INTO broker_summary (date, stock_code, broker_code, side, lot, val, avg_price, lot_vol, val_vol, freq, type)
-         VALUES ($1, $2, $3, 'S', $4, $5, $6, $7, $8, $9, 'net')
-         ON CONFLICT (date, stock_code, broker_code, side)
-         DO UPDATE SET
-           lot = EXCLUDED.lot,
-           val = EXCLUDED.val,
-           avg_price = EXCLUDED.avg_price,
-           lot_vol = EXCLUDED.lot_vol,
-           val_vol = EXCLUDED.val_vol,
-           freq = EXCLUDED.freq,
-           type = EXCLUDED.type`,
-        [date, stockCode, row.broker_code, row.lot, row.val, row.avg_price, row.lot_vol, row.val_vol, row.freq]
+        `INSERT INTO broker_summary (
+          date, stock_code, broker_code, broker_type,
+          buy_lot, buy_value, buy_avg_price,
+          sell_lot, sell_value, sell_avg_price,
+          buy_freq, sell_freq
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (date, stock_code, broker_code)
+        DO UPDATE SET
+          broker_type = EXCLUDED.broker_type,
+          buy_lot = EXCLUDED.buy_lot,
+          buy_value = EXCLUDED.buy_value,
+          buy_avg_price = EXCLUDED.buy_avg_price,
+          sell_lot = EXCLUDED.sell_lot,
+          sell_value = EXCLUDED.sell_value,
+          sell_avg_price = EXCLUDED.sell_avg_price,
+          buy_freq = EXCLUDED.buy_freq,
+          sell_freq = EXCLUDED.sell_freq`,
+        [
+          date,
+          stockCode,
+          row.broker_code,
+          row.broker_type,
+          row.buy_lot,
+          row.buy_value,
+          row.buy_avg_price,
+          row.sell_lot,
+          row.sell_value,
+          row.sell_avg_price,
+          row.buy_freq,
+          row.sell_freq
+        ]
       );
       count++;
     }

@@ -431,13 +431,7 @@ function normalizeSummaryData(data) {
   const maybeData = data.data;
   if (maybeData && typeof maybeData === 'object') {
     const brokerSummary = maybeData.broker_summary;
-    const bandarDetector = maybeData.bandar_detector;
-    if (brokerSummary && typeof brokerSummary === 'object') {
-      return {
-        ...brokerSummary,
-        bandar_detector: (bandarDetector && typeof bandarDetector === 'object') ? bandarDetector : undefined,
-      };
-    }
+    if (brokerSummary && typeof brokerSummary === 'object') return brokerSummary;
     const marketDetector = maybeData.market_detector;
     if (marketDetector && typeof marketDetector === 'object') return marketDetector;
     return maybeData;
@@ -445,47 +439,68 @@ function normalizeSummaryData(data) {
   return data;
 }
 
-function normalizeBuyRow(row) {
-  return {
-    broker_code: row.netbs_broker_code || row.broker_code || row.code || '??',
-    lot: Math.abs(Number(row.blot || row.lot || 0)),
-    val: Number(row.bval || row.value || row.net_value || 0),
-    avg_price: Math.round(Number(row.netbs_buy_avg_price || row.bavg || row.avg_price || 0)),
-    lot_vol: Math.abs(Number(row.blotv || 0)),
-    val_vol: Math.abs(Number(row.bvalv || 0)),
-    freq: Number(row.freq || 0),
-  };
-}
-
-function normalizeSellRow(row) {
-  return {
-    broker_code: row.netbs_broker_code || row.broker_code || row.code || '??',
-    lot: Math.abs(Number(row.slot || row.lot || 0)),
-    val: Math.abs(Number(row.sval || row.value || row.net_value || 0)),
-    avg_price: Math.round(Number(row.netbs_sell_avg_price || row.savg || row.avg_price || 0)),
-    lot_vol: Math.abs(Number(row.slotv || 0)),
-    val_vol: Math.abs(Number(row.svalv || 0)),
-    freq: Number(row.freq || 0),
-  };
-}
-
 async function fetchBrokerSummary(symbol, date) {
   const query = new URLSearchParams({
     from: date,
     to: date,
     investor_type: 'INVESTOR_TYPE_ALL',
-    market_board: 'MARKET_BOARD_REGULER',
-    transaction_type: 'TRANSACTION_TYPE_NET',
-    limit: '100',
+    market_board: 'MARKET_BOARD_ALL',
+    transaction_type: 'TRANSACTION_TYPE_GROSS',
+    limit: '200',
   });
   const url = `${EXODUS_API}/marketdetectors/${symbol}?${query.toString()}`;
   const raw = await fetchStockbitJson(url, `summary:${symbol}:${date}`);
   const summary = normalizeSummaryData(raw);
 
-  const buyRows = (summary?.brokers_buy || summary?.buy || []).map(normalizeBuyRow);
-  const sellRows = (summary?.brokers_sell || summary?.sell || []).map(normalizeSellRow);
+  const brokersMap = new Map();
 
-  return { buyRows, sellRows, raw: summary };
+  const buyRows = summary?.brokers_buy || [];
+  const sellRows = summary?.brokers_sell || [];
+
+  buyRows.forEach(row => {
+    const code = row.netbs_broker_code || row.broker_code;
+    if (!code) return;
+    brokersMap.set(code, {
+      broker_code: code,
+      broker_type: row.type || 'Lokal',
+      buy_lot: Math.abs(Number(row.blot || 0)),
+      buy_value: Number(row.bval || 0),
+      buy_avg_price: Number(row.netbs_buy_avg_price || 0),
+      sell_lot: 0,
+      sell_value: 0,
+      sell_avg_price: 0,
+      buy_freq: Number(row.freq || 0),
+      sell_freq: 0
+    });
+  });
+
+  sellRows.forEach(row => {
+    const code = row.netbs_broker_code || row.broker_code;
+    if (!code) return;
+    const existing = brokersMap.get(code);
+    if (existing) {
+      existing.sell_lot = Math.abs(Number(row.slot || 0));
+      existing.sell_value = Number(row.sval || 0);
+      existing.sell_avg_price = Number(row.netbs_sell_avg_price || 0);
+      existing.sell_freq = Number(row.freq || 0);
+      if (row.type) existing.broker_type = row.type;
+    } else {
+      brokersMap.set(code, {
+        broker_code: code,
+        broker_type: row.type || 'Lokal',
+        buy_lot: 0,
+        buy_value: 0,
+        buy_avg_price: 0,
+        sell_lot: Math.abs(Number(row.slot || 0)),
+        sell_value: Number(row.sval || 0),
+        sell_avg_price: Number(row.netbs_sell_avg_price || 0),
+        buy_freq: 0,
+        sell_freq: Number(row.freq || 0)
+      });
+    }
+  });
+
+  return Array.from(brokersMap.values());
 }
 
 module.exports = {
