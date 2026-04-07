@@ -1,6 +1,35 @@
-async function getValidBrokerCodes(pool) {
-  const result = await pool.query('SELECT code FROM brokers');
-  return new Set(result.rows.map((r) => r.code));
+async function ensureBrokersExist(pool, brokerCodes) {
+  if (!brokerCodes || brokerCodes.size === 0) return;
+
+  const codes = Array.from(brokerCodes);
+  
+  // Find which codes are already there
+  const result = await pool.query(
+    'SELECT code FROM brokers WHERE code = ANY($1)',
+    [codes]
+  );
+  const existingSet = new Set(result.rows.map(r => r.code));
+  const missingCodes = codes.filter(c => !existingSet.has(c));
+
+  if (missingCodes.length === 0) return;
+
+  console.log(`  🆕 Registering ${missingCodes.length} new brokers found in summary: ${missingCodes.join(', ')}`);
+
+  // Insert missing brokers
+  // Note: We use a simple loop or a single multi-row insert.
+  // We'll use a single query for efficiency.
+  const values = [];
+  const params = [];
+  missingCodes.forEach((code, i) => {
+    const baseIndex = i * 2;
+    values.push(`($${baseIndex + 1}, $${baseIndex + 2})`);
+    params.push(code, `Unknown Broker (${code})`);
+  });
+
+  await pool.query(
+    `INSERT INTO brokers (code, name) VALUES ${values.join(', ')} ON CONFLICT (code) DO NOTHING`,
+    params
+  );
 }
 
 async function stockExists(pool, stockCode) {
@@ -9,22 +38,20 @@ async function stockExists(pool, stockCode) {
 }
 
 async function upsertBrokerSummary(pool, stockCode, date, buyRows, sellRows) {
-  const [validBrokers, hasStock] = await Promise.all([
-    getValidBrokerCodes(pool),
+  // 1. Gather all unique broker codes present in this batch
+  const uniqueCodes = new Set([
+    ...buyRows.map(r => r.broker_code),
+    ...sellRows.map(r => r.broker_code)
+  ]);
+
+  // 2. Ensure both stock and brokers exist
+  const [hasStock] = await Promise.all([
     stockExists(pool, stockCode),
+    ensureBrokersExist(pool, uniqueCodes)
   ]);
 
   if (!hasStock) {
     throw new Error(`Stock ${stockCode} not found in stocks table`);
-  }
-
-  const filteredBuy = buyRows.filter((r) => validBrokers.has(r.broker_code));
-  const filteredSell = sellRows.filter((r) => validBrokers.has(r.broker_code));
-
-  const skippedBuy = buyRows.length - filteredBuy.length;
-  const skippedSell = sellRows.length - filteredSell.length;
-  if (skippedBuy > 0 || skippedSell > 0) {
-    console.log(`  Skipped ${skippedBuy} buy + ${skippedSell} sell rows (broker code not in DB)`);
   }
 
   const client = await pool.connect();
@@ -33,7 +60,7 @@ async function upsertBrokerSummary(pool, stockCode, date, buyRows, sellRows) {
   try {
     await client.query('BEGIN');
 
-    for (const row of filteredBuy) {
+    for (const row of buyRows) {
       await client.query(
         `INSERT INTO broker_summary (date, stock_code, broker_code, side, lot, val, avg_price, lot_vol, val_vol, freq, type)
          VALUES ($1, $2, $3, 'B', $4, $5, $6, $7, $8, $9, 'net')
@@ -51,7 +78,7 @@ async function upsertBrokerSummary(pool, stockCode, date, buyRows, sellRows) {
       count++;
     }
 
-    for (const row of filteredSell) {
+    for (const row of sellRows) {
       await client.query(
         `INSERT INTO broker_summary (date, stock_code, broker_code, side, lot, val, avg_price, lot_vol, val_vol, freq, type)
          VALUES ($1, $2, $3, 'S', $4, $5, $6, $7, $8, $9, 'net')
