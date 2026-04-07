@@ -40,6 +40,8 @@ async function run() {
     }
   }
 
+  const args = process.argv.slice(2);
+  const forceFresh = args.includes('--force') || args.includes('-f');
   p.intro(' STOCKBIT LOGIN ');
 
   try {
@@ -48,13 +50,17 @@ async function run() {
     
     const loginResult = await auth.loadToken();
     
-    if (auth.isTokenValid()) {
-      spinner.stop('Token is valid');
-    } else if (loginResult && loginResult.needsVerification) {
+    if (auth.isTokenValid() && !forceFresh) {
+      spinner.stop('Token is valid (Cached)');
+    } else if (loginResult && loginResult.needsVerification && !forceFresh) {
       spinner.stop('Trust verification required');
       await handleVerification(loginResult, process.env.STOCKBIT_EMAIL, process.env.STOCKBIT_PASSWORD);
     } else {
-      spinner.stop('Authentication required');
+      if (forceFresh) {
+        spinner.stop('Forced fresh login initiated');
+      } else {
+        spinner.stop('Authentication required');
+      }
       
       const group = await p.group(
         {
