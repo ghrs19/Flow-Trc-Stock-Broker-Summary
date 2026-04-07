@@ -1,0 +1,19 @@
+{
+  "name": "flow-trc-stock-broker-summary",
+  "version": "1.0.0",
+  "description": "Populate broker summary data from Stockbit to Neon PostgreSQL",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "populate": "node src/cron-populate.js",
+    "populate:one": "node src/populate-one.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.4.1",
+    "express": "^5.2.1",
+    "pg": "^8.20.0"
+  }
+}
