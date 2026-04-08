@@ -93,13 +93,13 @@ async function run() {
 
   try {
     // 1. Fetch active stocks
-    let stocksQuery = 'SELECT symbol FROM stocks WHERE is_active = true ORDER BY symbol ASC';
+    let stocksQuery = 'SELECT code FROM stocks WHERE is_active = true ORDER BY code ASC';
     if (symbolLimit) {
       stocksQuery += ` LIMIT ${parseInt(symbolLimit, 10)}`;
     }
 
     const stocksRes = await pool.query(stocksQuery);
-    const symbols = stocksRes.rows.map(r => r.symbol);
+    const symbols = stocksRes.rows.map(r => r.code);
 
     console.log(`📦 Found ${symbols.length} stocks to process.`);
     console.log(`📅 Dates to process: ${dateList.length} (Workdays from ${dateList[0]} back to ${dateList[dateList.length - 1]})`);
@@ -112,7 +112,7 @@ async function run() {
         try {
           // Check if already populated
           const checkRes = await pool.query(
-            'SELECT 1 FROM broker_summary WHERE stock_code = $1 AND date = $2 LIMIT 1',
+            'SELECT 1 FROM broker_summaries WHERE stock_code = $1 AND trade_date = $2 LIMIT 1',
             [symbol, date]
           );
 

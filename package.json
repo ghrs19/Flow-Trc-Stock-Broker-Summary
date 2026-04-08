@@ -8,6 +8,7 @@
     "populate": "node src/cron-populate.js",
     "populate:one": "node src/populate-one.js",
     "populate:history": "node src/cli/populate-history.js",
+    "populate:history:date": "node src/cli/populate-history-by-date.js",
     "login": "node src/cli/login.js"
   },
   "keywords": [],

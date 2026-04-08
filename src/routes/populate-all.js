@@ -24,9 +24,9 @@ function resolveDate(dateParam) {
 
 async function getActiveStocks() {
   const result = await pool.query(
-    `SELECT symbol FROM stocks WHERE is_active = true ORDER BY symbol`
+    `SELECT code FROM stocks WHERE is_active = true ORDER BY code`
   );
-  return result.rows.map((row) => row.symbol);
+  return result.rows.map((row) => row.code);
 }
 
 // GET /api/populate-all?key=API_KEY
@@ -74,8 +74,8 @@ router.get('/', async (req, res) => {
     const symbol = stocks[i];
 
     try {
-      const { buyRows, sellRows } = await fetchBrokerSummary(symbol, date);
-      const count = await upsertBrokerSummary(pool, symbol, date, buyRows, sellRows);
+      const brokersData = await fetchBrokerSummary(symbol, date);
+      const count = await upsertBrokerSummary(pool, symbol, date, brokersData);
 
       if (count > 0) {
         send('progress', { index: i + 1, total: stocks.length, symbol, rows: count, status: 'ok' });

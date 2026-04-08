@@ -48,9 +48,9 @@ function sleep(ms) {
 
 async function getActiveStocks() {
   const result = await pool.query(
-    `SELECT symbol FROM stocks WHERE is_active = true ORDER BY symbol`
+    `SELECT code FROM stocks WHERE is_active = true ORDER BY code`
   );
-  return result.rows.map((row) => row.symbol);
+  return result.rows.map((row) => row.code);
 }
 
 async function run() {
@@ -73,11 +73,11 @@ async function run() {
     const idx = `[${i + 1}/${stocks.length}]`;
 
     try {
-      const { buyRows, sellRows } = await fetchBrokerSummary(symbol, date);
-      const count = await upsertBrokerSummary(pool, symbol, date, buyRows, sellRows);
+      const brokersData = await fetchBrokerSummary(symbol, date);
+      const count = await upsertBrokerSummary(pool, symbol, date, brokersData);
 
       if (count > 0) {
-        console.log(`${idx} ${symbol} — ${count} rows upserted (buy: ${buyRows.length}, sell: ${sellRows.length})`);
+        console.log(`${idx} ${symbol} — ${count} rows upserted`);
         success++;
       } else {
         console.log(`${idx} ${symbol} — no data (skipped)`);

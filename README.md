@@ -52,6 +52,9 @@ Populates data for all active stocks from the newest available price date down t
 # Populate all available history
 npm run populate:history
 
+# Populate by date first (backward iteration)
+npm run populate:history:date -- --range=5mo
+
 # Test with a limit (e.g., process only the first 10 stocks)
 npm run populate:history -- --limit=10
 ```

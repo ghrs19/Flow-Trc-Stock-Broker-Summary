@@ -35,11 +35,10 @@ async function run() {
   console.log(`Fetching broker summary for ${stock} on ${date}...`);
 
   try {
-    const { buyRows, sellRows } = await fetchBrokerSummary(stock, date);
-    const count = await upsertBrokerSummary(pool, stock, date, buyRows, sellRows);
+    const brokersData = await fetchBrokerSummary(stock, date);
+    const count = await upsertBrokerSummary(pool, stock, date, brokersData);
 
     console.log(`Done: ${count} rows upserted for ${stock} on ${date}`);
-    console.log(`  Buy brokers: ${buyRows.length}, Sell brokers: ${sellRows.length}`);
   } catch (err) {
     console.error(`Error: ${err.message}`);
     process.exit(1);

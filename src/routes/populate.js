@@ -24,8 +24,8 @@ router.get('/', async (req, res) => {
     const symbol = stock.toUpperCase();
     console.log(`[api] Fetching broker summary for ${symbol} on ${date}...`);
 
-    const { buyRows, sellRows } = await fetchBrokerSummary(symbol, date);
-    const count = await upsertBrokerSummary(pool, symbol, date, buyRows, sellRows);
+    const brokersData = await fetchBrokerSummary(symbol, date);
+    const count = await upsertBrokerSummary(pool, symbol, date, brokersData);
 
     console.log(`[api] Upserted ${count} rows for ${symbol} on ${date}`);
 
