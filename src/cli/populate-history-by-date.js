@@ -60,12 +60,37 @@ function parseRelativeRange(rangeStr) {
   return date;
 }
 
+/**
+ * Parses relative range from a specific start date.
+ * @param {string} dateStr 
+ * @param {string} rangeStr 
+ * @returns {Date}
+ */
+function parseRelativeRangeFromDate(dateStr, rangeStr) {
+  const match = rangeStr.match(/^(\d+)(d|w|mo|y)$/);
+  if (!match) throw new Error(`Invalid range format: ${rangeStr}. Use e.g. 5mo, 10d, 1y`);
+
+  const value = parseInt(match[1], 10);
+  const unit = match[2];
+  const date = new Date(dateStr);
+  date.setHours(0, 0, 0, 0);
+
+  switch (unit) {
+    case 'd': date.setDate(date.getDate() - value); break;
+    case 'w': date.setDate(date.getDate() - (value * 7)); break;
+    case 'mo': date.setMonth(date.getMonth() - value); break;
+    case 'y': date.setFullYear(date.getFullYear() - value); break;
+  }
+  return date;
+}
+
 async function run() {
   const args = process.argv.slice(2);
   const symbolLimit = args.find(a => a.startsWith('--limit='))?.split('=')[1];
   const rangeArg = args.find(a => a.startsWith('--range='))?.split('=')[1];
   const fromArg = args.find(a => a.startsWith('--from='))?.split('=')[1];
   const toArg = args.find(a => a.startsWith('--to='))?.split('=')[1];
+  const startArg = args.find(a => a.startsWith('--start='))?.split('=')[1];
 
   console.log('🚀 Starting Historical Broker Summary Population (Date-first order)...');
   console.log(`⏱️  Delay between requests: ${DELAY_MS}ms`);
@@ -75,6 +100,9 @@ async function run() {
   if (fromArg) {
     startDate = new Date(fromArg);
     endDate = toArg ? new Date(toArg) : new Date();
+  } else if (startArg) {
+    endDate = new Date(startArg);
+    startDate = rangeArg ? parseRelativeRangeFromDate(startArg, rangeArg) : endDate;
   } else if (rangeArg) {
     startDate = parseRelativeRange(rangeArg);
     endDate = new Date();

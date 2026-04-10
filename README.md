@@ -1,11 +1,12 @@
 # Flow Trc — Broker Summary Populate
 
-Fetches broker summary data from Stockbit API and populates it into the `broker_summary` table in Neon PostgreSQL.
+Fetches broker summary data from Stockbit API and populates it into the `broker_summaries` table in Neon PostgreSQL.
 
 ## Features
 
 -   **Interactive Login**: CLI with masked password input and mobile app approval (V6 API).
--   **Historical Sync**: Populate historical data from newest to oldest based on existing price records.
+-   **Historical Sync**: Two modes for populating historical data (Stock-first or Date-first).
+-   **Date-First Iteration**: Processes all stocks for a specific date before moving to the previous date (Day -1 by default).
 -   **Auto Broker Registration**: Automatically registers unknown broker codes observed in trade data.
 -   **Anti-Throttling**: Configurable delay between requests to avoid rate limits.
 -   **Secure Storage**: Tokens and metadata (Player ID, Expiry) are stored securely in the PostgreSQL `settings` table. No local `.token_cache.json` files.
@@ -46,17 +47,29 @@ npm run login -- --force
 
 ### 2. Filling Historical Data
 
-Populates data for all active stocks from the newest available price date down to the oldest:
+#### Option A: Stock-first (Original)
+Populates data for each stock across the entire date range before moving to the next stock.
 
 ```bash
 # Populate all available history
 npm run populate:history
 
-# Populate by date first (backward iteration)
-npm run populate:history:date -- --range=5mo
-
 # Test with a limit (e.g., process only the first 10 stocks)
 npm run populate:history -- --limit=10
+```
+
+#### Option B: Date-first (Recommended for range)
+Processes all active stocks for a specific date, then moves to the previous date. Starts from yesterday (Day -1) by default.
+
+```bash
+# Populate by date first (backward iteration starting from yesterday)
+npm run populate:history:date -- --range=5mo
+
+# Populate backward from a specific date
+npm run populate:history:date -- --range=5mo --start=2026-01-26
+
+# Test with a limit (e.g., process only first 5 stocks per date)
+npm run populate:history:date -- --range=1w --limit=5
 ```
 
 ### 3. Daily Population (Automated)
@@ -79,10 +92,10 @@ npm run populate:one BBCA --date=2026-03-31
 ## Database Schema
 
 The implementation relies on:
--   `stocks`: List of symbols to process.
--   `price_ohlc_daily`: Used by `populate:history` to determine date ranges.
--   `brokers`: Master list of brokers (auto-populated if a code is missing).
--   `settings`: Stores `stockbit_access_token`, `stockbit_refresh_token`, `stockbit_token_expires_at`, and `stockbit_player_id`.
+-   **`stocks`**: List of symbols (using `code` as primary key).
+-   **`broker_summaries`**: The main table storing summary data (using `trade_date`).
+-   **`brokers`**: Master list of brokers (auto-populated if a code is missing).
+-   **`settings`**: Stores `stockbit_access_token`, `stockbit_refresh_token`, `stockbit_token_expires_at`, and `stockbit_player_id`.
 
 ## Security
 
@@ -93,5 +106,5 @@ The implementation relies on:
 
 All requests use fixed Stockbit parameters:
 - **Investor Type**: All Investor (`INVESTOR_TYPE_ALL`)
-- **Market Board**: Regular (`MARKET_BOARD_REGULER`)
-- **Transaction Type**: Net (`TRANSACTION_TYPE_NET`)
+- **Market Board**: All Board (`MARKET_BOARD_ALL`)
+- **Transaction Type**: Gross (`TRANSACTION_TYPE_GROSS`)
