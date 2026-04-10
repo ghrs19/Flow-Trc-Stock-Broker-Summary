@@ -48,7 +48,12 @@ async function run() {
     const spinner = p.spinner();
     spinner.start('Checking authentication status');
     
-    const loginResult = await auth.loadToken();
+    let loginResult = null;
+    try {
+      loginResult = await auth.loadToken();
+    } catch (err) {
+      // Ignore error to allow manual login fallback
+    }
     
     if (auth.isTokenValid() && !forceFresh) {
       spinner.stop('Token is valid (Cached)');
