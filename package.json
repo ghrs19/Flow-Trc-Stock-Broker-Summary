@@ -9,6 +9,7 @@
     "populate:one": "node src/populate-one.js",
     "populate:history": "node src/cli/populate-history.js",
     "populate:history:date": "node src/cli/populate-history-by-date.js",
+    "populate:ohlc": "node src/cli/populate-ohlc.js",
     "login": "node src/cli/login.js"
   },
   "keywords": [],

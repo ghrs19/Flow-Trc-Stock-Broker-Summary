@@ -503,8 +503,54 @@ async function fetchBrokerSummary(symbol, date) {
   return Array.from(brokersMap.values());
 }
 
+/**
+ * Fetches daily OHLC price data from Stockbit Chartbit API.
+ *
+ * API quirk: `from` = end date (newer), `to` = start date (older).
+ * Returns candles in descending order (newest first).
+ *
+ * @param {string} symbol  - Stock ticker e.g. 'BBCA'
+ * @param {string} startDate - Start date YYYY-MM-DD (older date)
+ * @param {string} endDate   - End date YYYY-MM-DD (newer date)
+ * @returns {Promise<Array>} Array of OHLC candle objects
+ */
+async function fetchOHLC(symbol, startDate, endDate) {
+  const query = new URLSearchParams({
+    from: endDate,    // API: 'from' = newer/end date
+    to: startDate,    // API: 'to'   = older/start date
+    limit: '0',       // 0 = no limit, return all candles in range
+  });
+  const url = `${EXODUS_API}/chartbit/${symbol}/price/daily?${query.toString()}`;
+  const raw = await fetchStockbitJson(url, `ohlc:${symbol}:${startDate}:${endDate}`);
+
+  const candles = raw?.data?.chartbit;
+  if (!Array.isArray(candles)) {
+    throw new Error(`fetchOHLC: unexpected response structure for ${symbol}`);
+  }
+
+  // Normalize and return in ascending order (oldest first)
+  return candles
+    .map(c => ({
+      date:              c.date,
+      open:              Number(c.open),
+      high:              Number(c.high),
+      low:               Number(c.low),
+      close:             Number(c.close),
+      volume:            Number(c.volume),
+      value:             Number(c.value),
+      frequency:         Number(c.frequency),
+      foreign_buy:       Number(c.foreignbuy),
+      foreign_sell:      Number(c.foreignsell),
+      foreign_flow:      Number(c.foreignflow),
+      dividend:          Number(c.dividend),
+      share_outstanding: Number(c.shareoutstanding),
+    }))
+    .reverse(); // ascending order
+}
+
 module.exports = {
   auth,
   fetchBrokerSummary,
+  fetchOHLC,
   fetchStockbitJson,
 };
