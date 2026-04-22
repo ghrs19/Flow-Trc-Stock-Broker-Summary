@@ -83,11 +83,99 @@ node src/cron-populate.js --yesterday  # yesterday (WIB)
 node src/cron-populate.js --date=2026-03-31  # specific date
 ```
 
+### 3b. One-shot Sequential Daily Pipeline
+
+Runs these steps synchronously (in order, no async parallel):
+1) force login
+2) populate OHLC for today
+3) populate broker summary for today
+
+```bash
+npm run populate:daily:sequential
+```
+
+Required env:
+- `STOCKBIT_USERNAME` (or `STOCKBIT_EMAIL`)
+- `STOCKBIT_PASSWORD`
+
+### 3c. Schedule with PM2 (Weekdays 17:30)
+
+If your project root is `/home/projects/broker_call`, run:
+
+```bash
+pm2 start npm \
+  --name "populate-daily-sequential-1730-weekdays" \
+  --cwd /home/projects/broker_call \
+  --cron "30 17 * * 1-5" \
+  --no-autorestart \
+  -- run populate:daily:sequential
+```
+
+Useful checks:
+
+```bash
+pm2 status
+pm2 logs populate-daily-sequential-1730-weekdays
+pm2 show populate-daily-sequential-1730-weekdays
+```
+
+Persist PM2 process list across reboot:
+
+```bash
+pm2 save
+pm2 startup
+```
+
 ### 4. Single Stock / Debug
 
 ```bash
 npm run populate:one BBCA --date=2026-03-31
 ```
+
+Single stock with range:
+
+```bash
+# Relative range
+npm run populate:one:range -- BBCA --range=1mo
+
+# Explicit range
+npm run populate:one:range -- --symbol=BBCA --from=2026-03-01 --to=2026-03-31
+
+# Today only
+npm run populate:one:range -- BBCA --today
+```
+
+Notes:
+- Use exactly one date selector: `--today`, `--range=<N><unit>`, or `--from=YYYY-MM-DD`.
+- Add `--force` to re-fetch even if data already exists for that date.
+
+### 5. Fetch OHLC Data
+
+Fetches daily OHLC candles (open, high, low, close, volume, etc.) into `stock_ohlc_prices`.
+
+```bash
+# 1 year range for all active stocks
+npm run populate:ohlc -- --range=1y
+
+# Today only
+npm run populate:ohlc -- --today
+
+# Specific date range
+npm run populate:ohlc -- --from=2024-01-01 --to=2024-12-31
+
+# Single stock
+npm run populate:ohlc -- --symbol=BBCA --range=6mo
+
+# First run (auto-create table + indexes)
+npm run populate:ohlc -- --range=1y --create-table
+
+# Test mode (limit number of stocks)
+npm run populate:ohlc -- --range=1y --limit=5
+```
+
+Notes:
+- Run `npm run login` first if your session is expired.
+- You must provide one of `--today`, `--range=<N><unit>`, or `--from=YYYY-MM-DD`.
 
 ## Database Schema
 

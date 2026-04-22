@@ -168,7 +168,7 @@ class StockbitAuth {
     }
 
     // Source 5: Environment credentials (if available)
-    const envEmail = process.env.STOCKBIT_EMAIL;
+    const envEmail = process.env.STOCKBIT_USERNAME || process.env.STOCKBIT_EMAIL;
     const envPass = process.env.STOCKBIT_PASSWORD;
 
     if (envEmail && envPass) {

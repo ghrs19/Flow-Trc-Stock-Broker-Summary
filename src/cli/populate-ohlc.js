@@ -43,6 +43,7 @@ Usage:
   node src/cli/populate-ohlc.js [options]
 
 Options:
+  --today             Fetch only today's OHLC data (sets --from and --to to today)
   --from=YYYY-MM-DD   Start date (required unless --range is set)
   --to=YYYY-MM-DD     End date   (default: today)
   --range=<N><unit>   Relative range from today: e.g. 5mo, 10d, 1y, 2y
@@ -51,6 +52,7 @@ Options:
   --create-table      Auto-create stock_ohlc_prices table if it doesn't exist
 
 Examples:
+  node src/cli/populate-ohlc.js --today
   node src/cli/populate-ohlc.js --range=1y
   node src/cli/populate-ohlc.js --from=2024-01-01 --to=2024-12-31
   node src/cli/populate-ohlc.js --symbol=BBCA --range=6mo
@@ -99,18 +101,27 @@ async function run() {
   const symbolArg     = args.find(a => a.startsWith('--symbol='))?.split('=')[1]?.toUpperCase();
   const limitArg      = args.find(a => a.startsWith('--limit='))?.split('=')[1];
   const createTable   = args.includes('--create-table');
+  const todayOnly     = args.includes('--today');
 
   // Resolve date range
   let startDate, endDate;
 
-  if (fromArg) {
+  if (todayOnly) {
+    if (fromArg || toArg || rangeArg) {
+      console.error('❌ Error: --today cannot be combined with --from, --to, or --range.\n');
+      printUsage();
+      process.exit(1);
+    }
+    startDate = new Date();
+    endDate   = new Date();
+  } else if (fromArg) {
     startDate = new Date(fromArg);
     endDate   = toArg ? new Date(toArg) : new Date();
   } else if (rangeArg) {
     startDate = parseRelativeRange(rangeArg);
     endDate   = new Date();
   } else {
-    console.error('❌ Error: --from=YYYY-MM-DD or --range=<N><unit> is required.\n');
+    console.error('❌ Error: provide one of --today, --from=YYYY-MM-DD, or --range=<N><unit>.\n');
     printUsage();
     process.exit(1);
   }

@@ -7,9 +7,11 @@
     "start": "node src/index.js",
     "populate": "node src/cron-populate.js",
     "populate:one": "node src/populate-one.js",
+    "populate:one:range": "node src/cli/populate-one-range.js",
     "populate:history": "node src/cli/populate-history.js",
     "populate:history:date": "node src/cli/populate-history-by-date.js",
     "populate:ohlc": "node src/cli/populate-ohlc.js",
+    "populate:daily:sequential": "node src/cli/populate-daily-sequential.js",
     "login": "node src/cli/login.js"
   },
   "keywords": [],
