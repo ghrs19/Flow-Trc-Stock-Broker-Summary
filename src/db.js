@@ -8,4 +8,9 @@ const pool = new Pool({
   },
 });
 
+// Add error listener to prevent unhandled 'error' events from crashing the process
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client:', err.message);
+});
+
 module.exports = pool;

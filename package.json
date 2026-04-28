@@ -12,6 +12,7 @@
     "populate:history:date": "node src/cli/populate-history-by-date.js",
     "populate:ohlc": "node src/cli/populate-ohlc.js",
     "populate:daily:sequential": "node src/cli/populate-daily-sequential.js",
+    "sync:stocks": "node src/cli/sync-stocks.js",
     "login": "node src/cli/login.js"
   },
   "keywords": [],

@@ -30,18 +30,37 @@ function ensureEnvCredentials() {
   }
 }
 
+/**
+ * Returns today's date in WIB (Asia/Jakarta) as YYYY-MM-DD string.
+ */
+function getTodayWIB() {
+  return new Date()
+    .toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }); // returns YYYY-MM-DD
+}
+
 function run() {
   try {
     ensureEnvCredentials();
 
+    const today = getTodayWIB();
+    console.log(`\nDaily sequential pipeline for date: ${today}`);
+
     // 1) Force login using environment credentials (no interactive prompt)
     runStep('Step 1/3 - Force Login', 'npm', ['run', 'login', '--', '--force', '--env']);
 
-    // 2) Populate OHLC for today only
-    runStep('Step 2/3 - Populate OHLC Today', 'npm', ['run', 'populate:ohlc', '--', '--today']);
+    // 2) Populate OHLC for today (WIB date, consistent with Step 3)
+    runStep(
+      'Step 2/3 - Populate OHLC Today',
+      'npm',
+      ['run', 'populate:ohlc', '--', `--from=${today}`, `--to=${today}`]
+    );
 
-    // 3) Populate broker summary for today
-    runStep('Step 3/3 - Populate Broker Summary', 'npm', ['run', 'populate']);
+    // 3) Populate broker summary for today (skip-aware: skips stocks already populated)
+    runStep(
+      'Step 3/3 - Populate Broker Summary',
+      'npm',
+      ['run', 'populate:history:date', '--', `--from=${today}`, `--to=${today}`]
+    );
 
     console.log('\nAll steps completed successfully (sequential sync run).');
   } catch (err) {
